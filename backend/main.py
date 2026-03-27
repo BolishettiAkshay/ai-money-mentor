@@ -4,12 +4,12 @@ from sqlalchemy.orm import Session
 import os
 import shutil
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 import models, schemas, database
 from database import engine, get_db
 
-# Create tables (In production, use migrations like Alembic)
+# Create tables
 try:
     models.Base.metadata.create_all(bind=engine)
 except Exception as e:
@@ -17,7 +17,7 @@ except Exception as e:
 
 app = FastAPI(title="AI Money Mentor API")
 
-# Enable CORS
+# Enable CORS (MANDATORY)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,61 +30,76 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
+@app.get("/")
+async def root():
+    return {"status": "Backend is running"}
+
 @app.post("/analyze", response_model=schemas.AnalysisResponse)
-def analyze_finance(data: schemas.UserFinanceCreate, db: Session = Depends(get_db)):
-    # 1. Calculation logic
-    income = data.income if data.income > 0 else 1
-    savings_rate = data.savings / income
-    
-    if savings_rate >= 0.3:
-        score = 85
-    elif savings_rate >= 0.2:
-        score = 70
-    elif savings_rate >= 0.1:
-        score = 55
-    else:
-        score = 40
+async def analyze_finance(data: schemas.UserFinanceCreate, db: Session = Depends(get_db)):
+    print("Incoming data:", data.dict())
+    try:
+        income = data.income
+        expenses = data.expenses
+        savings = data.savings
+        investments = data.investments
+        goal = data.goal
+
+        if income <= 0:
+            raise HTTPException(status_code=400, detail="Income must be greater than 0")
+
+        savings_rate = savings / income
         
-    plan = {
-        "save": f"₹{int(data.income * 0.2):,}",
-        "invest": f"₹{int(data.income * 0.15):,}",
-        "emergency": f"₹{int(data.income * 0.1):,}"
-    }
-    
-    advice = "Your financial health is good, but you could optimize your non-essential spending."
-    if score < 60:
-        advice = "Focus on reducing high-interest debt and increasing your savings rate."
-    elif score > 80:
-        advice = "Excellent! Consider diversifying into more advanced investment vehicles."
-        
-    # 2. Store in DB
-    new_record = models.UserFinance(
-        income=data.income,
-        expenses=data.expenses,
-        savings=data.savings,
-        investments=data.investments,
-        goal=data.goal,
-        score=score
-    )
-    db.add(new_record)
-    db.commit()
-    db.refresh(new_record)
-    
-    return {
-        "score": score,
-        "plan": plan,
-        "advice": advice,
-        "goal": {
-            "type": data.goal,
-            "target": "₹5,00,000", # Placeholder logic
-            "monthly": "₹15,000",
-            "timeline": "36 Months"
+        if savings_rate >= 0.3:
+            score = 85
+        elif savings_rate >= 0.2:
+            score = 70
+        elif savings_rate >= 0.1:
+            score = 55
+        else:
+            score = 40
+            
+        plan = {
+            "save": f"{int(income * 0.2)}",
+            "invest": f"{int(income * 0.15)}",
+            "emergency": f"{int(income * 0.1)}"
         }
-    }
+        
+        advice = "Reduce unnecessary expenses and increase savings."
+        if score < 60:
+            advice = "Focus on reducing high-interest debt and increasing your savings rate."
+        elif score > 80:
+            advice = "Excellent! Consider diversifying into more advanced investment vehicles."
+            
+        # Store in DB
+        new_record = models.UserFinance(
+            income=income,
+            expenses=expenses,
+            savings=savings,
+            investments=investments,
+            goal=goal,
+            score=score
+        )
+        db.add(new_record)
+        db.commit()
+        db.refresh(new_record)
+        
+        return {
+            "score": score,
+            "plan": plan,
+            "advice": advice,
+            "goal": {
+                "type": goal,
+                "target": "₹5,00,000",
+                "monthly": "₹15,000",
+                "timeline": "36 Months"
+            }
+        }
+    except Exception as e:
+        print(f"Error in /analyze: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/dashboard-data")
-def get_dashboard_data(db: Session = Depends(get_db)):
-    # Return latest user record
+async def get_dashboard_data(db: Session = Depends(get_db)):
     record = db.query(models.UserFinance).order_by(models.UserFinance.created_at.desc()).first()
     if not record:
         return {
@@ -101,28 +116,30 @@ async def upload_file(file: UploadFile = File(...)):
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        
-    # Basic analysis simulation
     return {
         "filename": file.filename,
-        "total_transactions": 42, # Simulated
-        "estimated_spending": "₹12,450" # Simulated
+        "total_transactions": 42,
+        "estimated_spending": "₹12,450"
     }
 
 @app.post("/chat")
-def ai_chat(chat_input: schemas.ChatInput):
+async def ai_chat(chat_input: schemas.ChatInput):
     msg = chat_input.message.lower()
     user_data = chat_input.user_data or {}
     income = user_data.get("income", 0)
+    expenses = user_data.get("expenses", 0)
     
     reply = "I'm your AI Money Mentor. How can I help you today?"
     
     if "save" in msg:
-        reply = f"Based on your income of ₹{income}, I recommend saving at least 20%. Try setting up an auto-transfer to a high-yield savings account."
+        reply = f"You should save at least ₹{int(float(income) * 0.2)} monthly."
     elif "invest" in msg:
         reply = "Consider low-cost index funds or ELSS for tax savings. Always keep an emergency fund first."
     elif "expenses" in msg:
-        reply = "Review your subscription services and dining out. Even small cuts can lead to large savings over time."
+        if float(expenses) > float(income) * 0.7:
+            reply = "Your expenses are too high. Try reducing discretionary spending."
+        else:
+            reply = "Your expenses are under control."
     elif "score" in msg:
         reply = "Your current money health score is calculated based on your savings-to-income ratio."
         
