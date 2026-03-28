@@ -8,3 +8,4 @@ python-docx
 sentence-transformers
 faiss-cpu
 numpy
+pypdf
