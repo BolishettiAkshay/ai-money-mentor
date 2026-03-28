@@ -1,6 +1,10 @@
 fastapi
 uvicorn
-sqlalchemy
-pymysql
 python-multipart
 pydantic
+requests
+pypdf
+python-docx
+sentence-transformers
+faiss-cpu
+numpy
