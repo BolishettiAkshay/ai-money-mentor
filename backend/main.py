@@ -1,3 +1,5 @@
+import json
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.analyze import router as analyze_router
@@ -5,7 +7,7 @@ from routes.upload import router as upload_router
 
 app = FastAPI(title="FinWise AI Local Backend")
 
-# Enable CORS
+# Enable CORS (Important for frontend connection)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,6 +23,16 @@ app.include_router(upload_router)
 @app.get("/")
 async def root():
     return {"status": "FinWise AI Backend is running locally"}
+
+@app.get("/data")
+async def get_data():
+    try:
+        if os.path.exists("data.json"):
+            with open("data.json", "r") as f:
+                return json.load(f)
+        return []
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
