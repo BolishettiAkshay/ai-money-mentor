@@ -2,11 +2,16 @@ import json
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.models import init_db
 
 # Import router from the app.routes
 from app.routes.analyze import router as analyze_router
 
 app = FastAPI(title="FinWise AI Local Backend")
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 # Enable CORS (Important for frontend connection)
 app.add_middleware(
@@ -18,7 +23,7 @@ app.add_middleware(
 )
 
 # Include router
-app.include_router(analyze_router)
+app.include_router(analyze_router, prefix="/api")
 
 @app.get("/")
 async def root():
